@@ -1,0 +1,11 @@
+# .gitignore
+node_modules/
+apps/*/dist/
+apps/*/coverage/
+**/dist/
+coverage/
+.vite/
+.DS_Store
+*.log
+.env
+.env.local
