@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import rateLimit from 'express-rate-limit';
 import { JsonStorage } from './storage';
 import { commentSchema, loginSchema, postSchema, registerSchema } from './validation';
 import { hashPassword, issueToken, requireAuth, AuthenticatedRequest, verifyPassword } from './auth';
@@ -22,26 +23,20 @@ function sanitizeUser(user: User): Omit<User, 'passwordHash'> {
 }
 
 export function createApp(storage = new JsonStorage()): express.Express {
-  const rateLimitState = new Map<string, number[]>();
-  const createRateLimiter =
-    (keyPrefix: string, maxRequests: number, windowMs: number) =>
-    (req: Request, res: Response, next: NextFunction): void => {
-      const key = `${keyPrefix}:${req.ip ?? 'unknown'}`;
-      const now = Date.now();
-      const current = (rateLimitState.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
-
-      if (current.length >= maxRequests) {
-        res.status(429).json({ message: 'Too many requests, please try again later.' });
-        return;
-      }
-
-      current.push(now);
-      rateLimitState.set(key, current);
-      next();
-    };
-
-  const authRateLimiter = createRateLimiter('auth', 30, 60_000);
-  const feedRateLimiter = createRateLimiter('feed', 120, 60_000);
+  const authRateLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests, please try again later.' }
+  });
+  const feedRateLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests, please try again later.' }
+  });
 
   const app = express();
   app.use(cors());
