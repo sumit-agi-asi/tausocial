@@ -15,4 +15,6 @@ A social media with:
 - Security and privacy (Your data will be your proprietary right) and only you will have access to delete it or keep it
 - Experience of use, frontend and backend with ease of use like never before.
 
-- &copy; Technocraft Software 2026. All Rights Reserved.
+**&copy; TauSocial 2026. All Rights Reserved.**
+
+**&copy; Technocraft Corporation 2026. All Rights Reserved.**
