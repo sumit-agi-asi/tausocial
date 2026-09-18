@@ -1,12 +1,8 @@
-# Mobile App
+# TauSocial Web App
 
-This directory contains the React Native application and platform-specific native bridge modules.
-
-## Planned structure
-
-- app/
-- native/
-- e2e/
-- scripts/
-- docs/
-
+React + Vite frontend with:
+- login/register flow
+- authenticated accountability dashboard
+- feed posting, likes, comments
+- moderation badges and insight summary
+- responsive dark UI

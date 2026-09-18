@@ -9,3 +9,5 @@ coverage/
 *.log
 .env
 .env.local
+apps/server/data/*.json
+!apps/server/data/.gitkeep
