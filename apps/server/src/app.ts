@@ -1,14 +1,15 @@
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
+import crypto from 'node:crypto';
 import { JsonStorage } from './storage';
 import { commentSchema, loginSchema, postSchema, registerSchema } from './validation';
-import { hashPassword, issueToken, requireAuth, AuthenticatedRequest } from './auth';
+import { hashPassword, issueToken, requireAuth, AuthenticatedRequest, verifyPassword } from './auth';
 import { buildAccountabilityMetrics, generateFeedInsights } from './insights';
 import { scoreContent } from './moderation';
 import { Comment, Post, User } from './models';
 
 function createId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
 function sanitizeUser(user: User): Omit<User, 'passwordHash'> {
@@ -21,6 +22,27 @@ function sanitizeUser(user: User): Omit<User, 'passwordHash'> {
 }
 
 export function createApp(storage = new JsonStorage()): express.Express {
+  const rateLimitState = new Map<string, number[]>();
+  const createRateLimiter =
+    (keyPrefix: string, maxRequests: number, windowMs: number) =>
+    (req: Request, res: Response, next: NextFunction): void => {
+      const key = `${keyPrefix}:${req.ip ?? 'unknown'}`;
+      const now = Date.now();
+      const current = (rateLimitState.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
+
+      if (current.length >= maxRequests) {
+        res.status(429).json({ message: 'Too many requests, please try again later.' });
+        return;
+      }
+
+      current.push(now);
+      rateLimitState.set(key, current);
+      next();
+    };
+
+  const authRateLimiter = createRateLimiter('auth', 30, 60_000);
+  const feedRateLimiter = createRateLimiter('feed', 120, 60_000);
+
   const app = express();
   app.use(cors());
   app.use(express.json());
@@ -29,7 +51,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     res.json({ status: 'ok' });
   });
 
-  app.post('/auth/register', async (req, res, next) => {
+  app.post('/auth/register', authRateLimiter, async (req, res, next) => {
     try {
       const payload = registerSchema.parse(req.body);
       const data = await storage.read();
@@ -57,13 +79,13 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/auth/login', async (req, res, next) => {
+  app.post('/auth/login', authRateLimiter, async (req, res, next) => {
     try {
       const payload = loginSchema.parse(req.body);
       const data = await storage.read();
       const user = data.users.find((candidate) => candidate.email === payload.email.toLowerCase());
 
-      if (!user || user.passwordHash !== hashPassword(payload.password)) {
+      if (!user || !verifyPassword(payload.password, user.passwordHash)) {
         res.status(401).json({ message: 'Invalid credentials' });
         return;
       }
@@ -75,7 +97,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/feed', requireAuth, async (_req: AuthenticatedRequest, res, next) => {
+  app.get('/feed', requireAuth, feedRateLimiter, async (_req: AuthenticatedRequest, res, next) => {
     try {
       const data = await storage.read();
       const sortedPosts = [...data.posts].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -85,7 +107,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -121,7 +143,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts/:postId/like', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts/:postId/like', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -148,7 +170,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts/:postId/comments', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts/:postId/comments', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -188,7 +210,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/metrics/accountability', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  app.get('/metrics/accountability', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -203,7 +225,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/insights/feed', requireAuth, async (_req: AuthenticatedRequest, res, next) => {
+  app.get('/insights/feed', requireAuth, feedRateLimiter, async (_req: AuthenticatedRequest, res, next) => {
     try {
       const data = await storage.read();
       res.json({ insights: generateFeedInsights(data.posts) });

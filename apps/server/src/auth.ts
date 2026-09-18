@@ -11,7 +11,25 @@ export interface AuthContext {
 }
 
 export function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, encoded: string): boolean {
+  const [salt, storedHash] = encoded.split(':');
+  if (!salt || !storedHash) {
+    return false;
+  }
+
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  const left = Buffer.from(hash, 'hex');
+  const right = Buffer.from(storedHash, 'hex');
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(left, right);
 }
 
 export function issueToken(user: User): string {
