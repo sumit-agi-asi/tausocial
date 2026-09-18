@@ -97,7 +97,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/feed', requireAuth, feedRateLimiter, async (_req: AuthenticatedRequest, res, next) => {
+  app.get('/feed', feedRateLimiter, requireAuth, async (_req: AuthenticatedRequest, res, next) => {
     try {
       const data = await storage.read();
       const sortedPosts = [...data.posts].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -107,7 +107,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts', feedRateLimiter, requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -143,7 +143,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts/:postId/like', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts/:postId/like', feedRateLimiter, requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -170,7 +170,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.post('/feed/posts/:postId/comments', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
+  app.post('/feed/posts/:postId/comments', feedRateLimiter, requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -210,7 +210,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/metrics/accountability', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res, next) => {
+  app.get('/metrics/accountability', feedRateLimiter, requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const auth = req.auth;
       if (!auth) {
@@ -225,7 +225,7 @@ export function createApp(storage = new JsonStorage()): express.Express {
     }
   });
 
-  app.get('/insights/feed', requireAuth, feedRateLimiter, async (_req: AuthenticatedRequest, res, next) => {
+  app.get('/insights/feed', feedRateLimiter, requireAuth, async (_req: AuthenticatedRequest, res, next) => {
     try {
       const data = await storage.read();
       res.json({ insights: generateFeedInsights(data.posts) });
