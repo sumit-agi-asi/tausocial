@@ -15,7 +15,7 @@
     "openapi": "tsx scripts/export-openapi.ts"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "applicationinsights": "^3.17.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
