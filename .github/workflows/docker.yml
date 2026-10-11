@@ -40,7 +40,7 @@ jobs:
           cache-to: type=gha,mode=max
           outputs: type=docker,dest=${{ runner.temp }}/${{ matrix.image }}.tar
       - name: Upload ${{ matrix.name }} image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.image }}-pr-${{ github.event.pull_request.number }}
           path: ${{ runner.temp }}/${{ matrix.image }}.tar
