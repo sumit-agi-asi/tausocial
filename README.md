@@ -21,7 +21,7 @@ Azure: Container Apps, PostgreSQL Flexible Server, Key Vault, Storage, ACR, mana
 
 | Path | Purpose |
 | --- | --- |
-| `apps/web` | React 18 SPA: login/sign-up, feed, threads, profiles, connections, KYC verification, settings |
+| `apps/web` | React 19 SPA: login/sign-up, feed, threads, profiles, connections, KYC verification, settings |
 | `apps/server` | REST API `/api/v1`, zod validation, OpenAPI, migrations, monitoring, recommender |
 | `infrastructure` | Azure Bicep with `PLACEHOLDER` parameters, see [`infrastructure/README.md`](infrastructure/README.md) |
 | `tests` | Playwright e2e, smoke/load, secret scanning |
