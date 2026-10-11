@@ -16,7 +16,7 @@ export class ApiError extends Error {
 
 type TokenProvider = () => string | null;
 let tokenProvider: TokenProvider = () => null;
-let unauthorizedHandler: () => void = () => undefined;
+let unauthorizedHandler: (() => void) | undefined;
 
 export function configureApi(options: { getToken: TokenProvider; onUnauthorized: () => void }): void {
   tokenProvider = options.getToken;
@@ -47,7 +47,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     | null;
   if (!response.ok) {
     if (response.status === 401 && token) {
-      unauthorizedHandler();
+      unauthorizedHandler?.();
     }
     throw new ApiError(
       response.status,

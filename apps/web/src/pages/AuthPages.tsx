@@ -4,7 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { messageOf } from '../hooks';
 
-function Field(props: { label: string; id: string; error?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+export function Field(props: { label: string; id: string; error?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   const { label, id, error, ...input } = props;
   return (
     <div className="field">

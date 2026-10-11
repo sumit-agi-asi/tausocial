@@ -36,6 +36,15 @@ describe('recommend()', () => {
     expect(getRecommenderAdapter().name).toBe('chronological');
   });
 
+  it('orders posts with identical timestamps by id', async () => {
+    const ranked = await recommend(
+      'u',
+      [candidate('b', '2026-02-01T00:00:00Z'), candidate('a', '2026-02-01T00:00:00Z')],
+      context
+    );
+    expect(ranked.map((item) => item.id)).toEqual(['a', 'b']);
+  });
+
   it('handles an empty candidate list', async () => {
     expect(await recommend('u', [], context)).toEqual([]);
   });
@@ -55,6 +64,16 @@ describe('recommend()', () => {
     expect(ranked.map((item) => item.id)).toEqual(['old', 'new', 'mid']);
     expect(ranked[0]?.reason).toBe('model');
     expect(ranked[1]?.reason).toBe('fallback-unranked');
+  });
+
+  it('uses chronological fallback ranks when the adapter returns no valid items', async () => {
+    setRecommenderAdapter({ name: 'empty', rank: async () => [] });
+    const ranked = await recommend('u', candidates, context);
+    expect(ranked.map(({ id, score, reason }) => ({ id, score, reason }))).toEqual([
+      { id: 'new', score: -1, reason: 'fallback-unranked' },
+      { id: 'mid', score: -2, reason: 'fallback-unranked' },
+      { id: 'old', score: -3, reason: 'fallback-unranked' }
+    ]);
   });
 
   it('falls back to chronological when the adapter throws', async () => {

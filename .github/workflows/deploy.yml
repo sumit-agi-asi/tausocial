@@ -164,7 +164,7 @@ jobs:
               --memory 1.0Gi \
               --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
               --user-assigned "$IDENTITY_ID" \
-              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --env-vars NODE_ENV=production DATABASE_SSL=true DATABASE_URL=secretref:database-url JWT_SECRET=secretref:jwt-secret \
               --secrets database-url="$TAUSOCIAL_STAGING_DATABASE_URL" jwt-secret="$TAUSOCIAL_STAGING_JWT_SECRET" \
               --secret-volume-mount /mnt/secrets \
               --command node apps/server/dist/migrate.js
@@ -179,7 +179,7 @@ jobs:
               --memory 1.0Gi \
               --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
               --user-assigned "$IDENTITY_ID" \
-              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --env-vars NODE_ENV=production DATABASE_SSL=true DATABASE_URL=secretref:database-url JWT_SECRET=secretref:jwt-secret \
               --secrets database-url="$TAUSOCIAL_STAGING_DATABASE_URL" jwt-secret="$TAUSOCIAL_STAGING_JWT_SECRET" \
               --secret-volume-mount /mnt/secrets \
               --command node apps/server/dist/migrate.js
@@ -278,7 +278,7 @@ jobs:
               --memory 1.0Gi \
               --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
               --user-assigned "$IDENTITY_ID" \
-              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --env-vars NODE_ENV=production DATABASE_SSL=true DATABASE_URL=secretref:database-url JWT_SECRET=secretref:jwt-secret \
               --secrets database-url="$TAUSOCIAL_PRODUCTION_DATABASE_URL" jwt-secret="$TAUSOCIAL_PRODUCTION_JWT_SECRET" \
               --secret-volume-mount /mnt/secrets \
               --command node apps/server/dist/migrate.js
@@ -293,7 +293,7 @@ jobs:
               --memory 1.0Gi \
               --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
               --user-assigned "$IDENTITY_ID" \
-              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --env-vars NODE_ENV=production DATABASE_SSL=true DATABASE_URL=secretref:database-url JWT_SECRET=secretref:jwt-secret \
               --secrets database-url="$TAUSOCIAL_PRODUCTION_DATABASE_URL" jwt-secret="$TAUSOCIAL_PRODUCTION_JWT_SECRET" \
               --secret-volume-mount /mnt/secrets \
               --command node apps/server/dist/migrate.js

@@ -10,6 +10,15 @@ afterEach(() => {
 });
 
 describe('api client', () => {
+  it('starts without a token provider or unauthorized callback', async () => {
+    vi.resetModules();
+    const client = await import('./api');
+    const fetchMock = respond(401, { error: { code: 'unauthorized', message: 'Authentication required' } });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(client.api.me()).rejects.toBeInstanceOf(client.ApiError);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization');
+  });
+
   it('sends JSON and the bearer token', async () => {
     const fetchMock = respond(200, { items: [] });
     vi.stubGlobal('fetch', fetchMock);

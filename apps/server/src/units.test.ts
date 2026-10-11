@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import jwt from 'jsonwebtoken';
 import { loadConfig } from './config';
+import { rescoreConnections } from './domain/connections';
 import { ageBand, ageOn } from './domain/age';
+import { toPost, toPublicProfile, UserRow } from './domain/mappers';
 import { defaultSimilarityScorer } from './domain/similarity';
-import { hashPassword, TokenService, verifyPassword } from './http/auth';
+import { currentUserId, hashPassword, TokenService, verifyPassword } from './http/auth';
 import { heuristicAnalyzers } from './monitoring/analyzers';
 import { decide } from './monitoring/policy';
 import { ModerationService } from './monitoring/service';
@@ -10,6 +13,7 @@ import { createPgliteDb } from './db';
 import { migrate, migrations } from './db/migrations';
 import { AppError } from './errors';
 import { createLogger } from './logger';
+import { onError } from './http/app';
 
 describe('config', () => {
   it('applies defaults in development', () => {
@@ -83,6 +87,71 @@ describe('passwords and tokens', () => {
     expect(tokens.verify(token)).toEqual({ userId: 'u1', role: 'moderator' });
     expect(() => new TokenService('t'.repeat(32), 60).verify(token)).toThrow();
     expect(() => tokens.verify('garbage')).toThrow();
+    const stringPayload = jwt.sign('invalid payload', 's'.repeat(32), { algorithm: 'HS256' });
+    expect(() => tokens.verify(stringPayload)).toThrow('Invalid token payload');
+    expect(() => currentUserId({} as never)).toThrow('Authentication required');
+  });
+});
+
+describe('domain edge cases', () => {
+  it('returns without rescoring if the user no longer exists', async () => {
+    const db = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }) };
+    await expect(rescoreConnections(db as never, defaultSimilarityScorer, 'missing', 0.8)).resolves.toEqual({ rescored: 0, flagged: 0 });
+    expect(db.query).toHaveBeenCalledOnce();
+  });
+
+  it('maps dates and falls back to usernames for blank display names', () => {
+    const user: UserRow = {
+      id: 'u1',
+      email: 'u@example.com',
+      username: 'user',
+      password_hash: 'hash',
+      display_name: '',
+      bio: '',
+      birth_date: '1990-01-01',
+      country: null,
+      education: null,
+      profession: null,
+      interests: [],
+      dislikes: [],
+      privacy: { profileVisibility: 'public', showRecentBubbles: true },
+      preferences: { showConnectionPostsInFeed: false, theme: 'system' },
+      role: 'user',
+      status: 'active',
+      verification_status: 'unverified',
+      phone: null,
+      created_at: new Date('2026-01-01T00:00:00Z')
+    };
+    expect(toPublicProfile(user)).toMatchObject({ displayName: 'user', createdAt: '2026-01-01T00:00:00.000Z' });
+    expect(toPublicProfile({ ...user, created_at: '2026-01-01T00:00:00Z' }).createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(
+      toPost({
+        id: 'p1',
+        author_id: user.id,
+        author_username: user.username,
+        author_display_name: '',
+        parent_id: null,
+        body: 'hello',
+        media: [],
+        tags: [],
+        flag: 'green',
+        action: 'allow',
+        created_at: new Date('2026-01-01T00:00:00Z'),
+        edited_at: null,
+        upvotes: 0,
+        downvotes: 0,
+        reply_count: 0,
+        my_reaction: null
+      })
+    ).toMatchObject({ authorDisplayName: 'user', createdAt: '2026-01-01T00:00:00.000Z', editedAt: null });
+  });
+
+  it('handles affected rows and nested PGlite transactions', async () => {
+    const db = await createPgliteDb();
+    await db.query('CREATE TABLE coverage_rows (id integer PRIMARY KEY)');
+    expect(await db.query('INSERT INTO coverage_rows (id) VALUES (1)')).toMatchObject({ rows: [], rowCount: 1 });
+    await db.tx(async (tx) => tx.tx(async (nested) => nested.query('SELECT id FROM coverage_rows')));
+    await db.close();
   });
 });
 
@@ -149,5 +218,27 @@ describe('misc', () => {
 
   it('logger redacts secrets', () => {
     expect(createLogger('silent').level).toBe('silent');
+  });
+
+  it('preserves structured error details and moderation metadata', () => {
+    const response = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const request = { id: 'request-id', log: { error: vi.fn() } };
+    onError(new AppError(400, 'bad_request', 'invalid', { field: 'name' }), request as never, response as never, vi.fn());
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: 'bad_request', message: 'invalid', details: { field: 'name' }, requestId: 'request-id' }
+    });
+
+    response.status.mockClear();
+    response.json.mockClear();
+    onError(
+      new AppError(422, 'content_blocked', 'blocked', { moderation: { flag: 'red' } }),
+      request as never,
+      response as never,
+      vi.fn()
+    );
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: 'content_blocked', message: 'blocked', requestId: 'request-id' },
+      moderation: { flag: 'red' }
+    });
   });
 });

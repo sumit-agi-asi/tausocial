@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RankedItem, chronologicalRecommender, setRecommenderAdapter } from './recommender';
 import { TestApp, TestUser, bearer, createTestApp, registerUser } from './testing/harness';
 
@@ -17,6 +17,21 @@ const post = (user: TestUser, body: string, extra: Record<string, unknown> = {})
     .post('/api/v1/posts')
     .set(...bearer(user))
     .send({ body, ...extra });
+
+function interceptSecondQuery(result: Error | { rows: unknown[]; rowCount: number }) {
+  const original = t.db.query.bind(t.db);
+  let calls = 0;
+  return vi.spyOn(t.db, 'query').mockImplementation(
+    (async (sql: string, params?: unknown[]) => {
+      calls += 1;
+      if (calls === 2) {
+        if (result instanceof Error) throw result;
+        return result;
+      }
+      return original(sql, params);
+    }) as never
+  );
+}
 
 describe('health and platform', () => {
   it('serves liveness and readiness', async () => {
@@ -50,6 +65,89 @@ describe('health and platform', () => {
     const withId = await api().get('/api/v1/nope').set('x-request-id', 'abcdef123456');
     expect(withId.body.error.requestId).toBe('abcdef123456');
     expect((await api().get('/elsewhere')).status).toBe(404);
+  });
+
+  it('rejects oversized bodies and hides unexpected errors', async () => {
+    const large = await api()
+      .post('/api/v1/auth/register')
+      .send({ email: 'large@example.com', username: 'large_user', password: 'correct-horse-battery', birthDate: '1990-01-01', extra: 'x'.repeat(110_000) });
+    expect(large.status).toBe(413);
+    expect(large.body.error.code).toBe('bad_request');
+
+    const query = vi.spyOn(t.db, 'query').mockRejectedValue(new Error('database credentials leaked'));
+    const failed = await api()
+      .post('/api/v1/auth/register')
+      .send({ email: 'failure@example.com', username: 'failure_user', password: 'correct-horse-battery', birthDate: '1990-01-01' });
+    expect(failed.status).toBe(500);
+    expect(failed.body.error).toMatchObject({ code: 'internal_error', message: 'Internal server error' });
+    expect(JSON.stringify(failed.body)).not.toContain('database credentials');
+    query.mockRestore();
+  });
+
+  it('routes database errors through consistent API error handling', async () => {
+    const me = await registerUser(t.app);
+    const auth = bearer(me);
+    let query = interceptSecondQuery({ rows: [], rowCount: 0 });
+    try {
+      const missingUser = await api().post('/api/v1/monitoring/check-user-authenticity').set(...auth);
+      expect(missingUser.body).toMatchObject({ verdict: 'unknown', details: 'Verification status: unverified' });
+    } finally {
+      query.mockRestore();
+    }
+    const failedEndpoints = [
+      () => api().get('/api/v1/connections').set(...auth),
+      () => api().get('/api/v1/feed/bubbles').set(...auth),
+      () => api().get('/api/v1/profiles/me/blocks').set(...auth),
+      () => api().delete(`/api/v1/profiles/${me.id}/block`).set(...auth),
+      () => api().post('/api/v1/monitoring/check-user-authenticity').set(...auth)
+    ];
+    for (const endpoint of failedEndpoints) {
+      const query = interceptSecondQuery(new Error('database unavailable'));
+      try {
+        expect((await endpoint()).status).toBe(500);
+      } finally {
+        query.mockRestore();
+      }
+    }
+
+    query = interceptSecondQuery({ rows: [], rowCount: 0 });
+    try {
+      expect((await api().get('/api/v1/connections/recommendations').set(...auth)).status).toBe(404);
+    } finally {
+      query.mockRestore();
+    }
+    for (const endpoint of [
+      () => api().get('/api/v1/profiles/me').set(...auth),
+      () => api().patch('/api/v1/profiles/me').set(...auth).send({ bio: 'updated' }),
+      () => api().delete('/api/v1/profiles/me').set(...auth).send({ password: 'correct-horse-battery' })
+    ]) {
+      const query = interceptSecondQuery({ rows: [], rowCount: 0 });
+      try {
+        expect((await endpoint()).status).toBe(401);
+      } finally {
+        query.mockRestore();
+      }
+    }
+    expect((await api().post('/api/v1/feed/refresh?limit=0').set(...auth)).status).toBe(400);
+  });
+
+  it('uses the verification date fallback when no created row is returned', async () => {
+    const me = await registerUser(t.app);
+    const tx = vi.spyOn(t.db, 'tx').mockImplementation(async (callback) =>
+      callback({
+        query: async (sql: string) => (sql.startsWith('SELECT created_at') ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 })
+      } as never)
+    );
+    try {
+      const result = await api()
+        .post('/api/v1/profiles/me/verification')
+        .set(...bearer(me))
+        .send({ phone: '+14155550123', govIdRef: 'a', addressProofRef: 'b' });
+      expect(result.status).toBe(202);
+      expect(Number.isNaN(Date.parse(result.body.createdAt))).toBe(false);
+    } finally {
+      tx.mockRestore();
+    }
   });
 
   it('serves the OpenAPI document and docs', async () => {
@@ -106,6 +204,7 @@ describe('auth', () => {
     const weak = await api().post('/api/v1/auth/register').send({ email: 'x', username: '!', password: '1', birthDate: 'x' });
     expect(weak.status).toBe(400);
     expect(weak.body.error.details.length).toBeGreaterThan(2);
+    await expect(registerUser(t.app, { username: '!' })).rejects.toThrow('register failed: 400');
     const year = new Date().getUTCFullYear() - 5;
     const young = await api()
       .post('/api/v1/auth/register')
@@ -221,6 +320,8 @@ describe('posts, threads and moderation', () => {
     expect((await post(me, 'x'.repeat(2001))).status).toBe(400);
     expect((await post(me, 'hi', { media: [{ kind: 'image', url: 'http://insecure.example/a.png' }] })).status).toBe(400);
     expect((await post(me, 'hi', { parentId: 'missing' })).status).toBe(404);
+    expect((await api().patch('/api/v1/posts/missing').set(...bearer(me)).send({ body: 'updated' })).status).toBe(404);
+    expect((await api().delete('/api/v1/posts/missing').set(...bearer(me))).status).toBe(404);
   });
 
   it('blocks unsafe content (red) and warns on suspect content (yellow)', async () => {
@@ -280,7 +381,17 @@ describe('monitoring endpoints', () => {
     expect((await call('detect-ai', { text: 'hi' })).body.verdict).toBe('unknown');
     expect((await call('detect-ai', {})).status).toBe(400);
     expect((await call('analyse-text', {})).status).toBe(400);
+    expect((await call('analyse-video', {})).status).toBe(400);
     expect((await api().post('/api/v1/monitoring/analyse-text').send({ text: 'x' })).status).toBe(401);
+  });
+
+  it('maps verification statuses to authenticity verdicts', async () => {
+    const me = await registerUser(t.app);
+    const endpoint = () => api().post('/api/v1/monitoring/check-user-authenticity').set(...bearer(me));
+    await t.db.query("UPDATE users SET verification_status = 'verified' WHERE id = $1", [me.id]);
+    expect((await endpoint()).body).toMatchObject({ verdict: 'clean', confidence: 1 });
+    await t.db.query("UPDATE users SET verification_status = 'rejected' WHERE id = $1", [me.id]);
+    expect((await endpoint()).body).toMatchObject({ verdict: 'violation', confidence: 0 });
   });
 });
 
@@ -290,14 +401,17 @@ describe('connections and similarity', () => {
   it('recommends similar people, connects them and flags drift', async () => {
     const me = await registerUser(t.app, { birthDate: '1990-01-01' });
     const twin = await registerUser(t.app, { birthDate: '1990-01-01' });
+    const twinTwo = await registerUser(t.app, { birthDate: '1990-01-01' });
     const stranger = await registerUser(t.app, { birthDate: '1960-01-01' });
-    for (const user of [me, twin]) {
+    for (const user of [me, twin, twinTwo]) {
       await api().patch('/api/v1/profiles/me').set(...bearer(user)).send(profile);
     }
+    await t.db.query("UPDATE users SET display_name = '' WHERE id = $1", [twin.id]);
     const recs = await api().get('/api/v1/connections/recommendations').set(...bearer(me));
     const ids = recs.body.recommendations.map((item: { userId: string }) => item.userId);
-    expect(ids).toContain(twin.id);
+    expect(ids).toEqual([twin.id, twinTwo.id].sort());
     expect(ids).not.toContain(stranger.id);
+    expect(recs.body.recommendations.find((item: { userId: string }) => item.userId === twin.id).displayName).toBe(twin.username);
 
     expect((await api().post('/api/v1/connections').set(...bearer(me)).send({ userId: me.id })).status).toBe(400);
     expect((await api().post('/api/v1/connections').set(...bearer(me)).send({ userId: twin.id })).status).toBe(201);
@@ -356,6 +470,21 @@ describe('feed', () => {
     await fresh.close();
   });
 
+  it('omits a candidate deleted before post hydration', async () => {
+    const me = await registerUser(t.app);
+    await post(me, 'vanishing candidate');
+    setRecommenderAdapter({
+      name: 'racing-delete',
+      rank: async (_user, candidates) => {
+        for (const candidate of candidates) await t.db.query('DELETE FROM posts WHERE id = $1', [candidate.id]);
+        return candidates.map((candidate, index) => ({ id: candidate.id, score: index, reason: 'test' }));
+      }
+    });
+    const result = await api().get('/api/v1/feed').set(...bearer(me));
+    expect(result.body.items).toEqual([]);
+    expect(result.body.recommender).toBe('racing-delete');
+  });
+
   it('shows an empty feed for a quiet network', async () => {
     const fresh = await createTestApp();
     const me = await registerUser(fresh.app);
@@ -367,9 +496,19 @@ describe('feed', () => {
   it('hides connection posts by default and shows them as bubbles', async () => {
     const me = await registerUser(t.app);
     const friend = await registerUser(t.app);
+    const otherFriend = await registerUser(t.app);
     await api().post('/api/v1/connections').set(...bearer(me)).send({ userId: friend.id });
     await api().post(`/api/v1/connections/${me.id}/accept`).set(...bearer(friend));
+    await api().post('/api/v1/connections').set(...bearer(me)).send({ userId: otherFriend.id });
+    await api().post(`/api/v1/connections/${me.id}/accept`).set(...bearer(otherFriend));
     const friendPost = (await post(friend, 'friend update')).body;
+    const otherPost = (await post(otherFriend, 'another friend update')).body;
+    const order = await t.db.query<{ id: string }>('SELECT id FROM users WHERE id = ANY($1::text[]) ORDER BY id', [[friend.id, otherFriend.id]]);
+    const firstId = order.rows[0]!.id;
+    const recent = new Date().toISOString();
+    const earlier = new Date(Date.now() - 60_000).toISOString();
+    await t.db.query('UPDATE posts SET created_at = $1 WHERE id = $2', [earlier, firstId === friend.id ? friendPost.id : otherPost.id]);
+    await t.db.query('UPDATE posts SET created_at = $1 WHERE id = $2', [recent, firstId === friend.id ? otherPost.id : friendPost.id]);
     const mine = (await post(me, 'my own post')).body;
 
     const feed = await api().get('/api/v1/feed').set(...bearer(me));
@@ -378,13 +517,21 @@ describe('feed', () => {
     expect(ids).not.toContain(friendPost.id);
 
     const bubbles = await api().get('/api/v1/feed/bubbles').set(...bearer(me));
-    expect(bubbles.body.bubbles).toEqual([expect.objectContaining({ userId: friend.id, latestPostId: friendPost.id })]);
+    expect(bubbles.body.bubbles.map((item: { latestPostId: string }) => item.latestPostId)).toEqual(
+      firstId === friend.id ? [otherPost.id, friendPost.id] : [friendPost.id, otherPost.id]
+    );
+    await t.db.query('UPDATE posts SET created_at = $1 WHERE id = $2', [recent, firstId === friend.id ? friendPost.id : otherPost.id]);
+    await t.db.query('UPDATE posts SET created_at = $1 WHERE id = $2', [earlier, firstId === friend.id ? otherPost.id : friendPost.id]);
+    expect((await api().get('/api/v1/feed/bubbles').set(...bearer(me))).body.bubbles.map((item: { latestPostId: string }) => item.latestPostId)).toEqual(
+      firstId === friend.id ? [friendPost.id, otherPost.id] : [otherPost.id, friendPost.id]
+    );
 
     await api().patch('/api/v1/profiles/me').set(...bearer(me)).send({ preferences: { showConnectionPostsInFeed: true, theme: 'system' } });
     const opted = await api().get('/api/v1/feed').set(...bearer(me));
     expect(opted.body.items.map((item: { id: string }) => item.id)).toContain(friendPost.id);
 
     await api().patch('/api/v1/profiles/me').set(...bearer(friend)).send({ privacy: { profileVisibility: 'public', showRecentBubbles: false } });
+    await api().patch('/api/v1/profiles/me').set(...bearer(otherFriend)).send({ privacy: { profileVisibility: 'public', showRecentBubbles: false } });
     expect((await api().get('/api/v1/feed/bubbles').set(...bearer(me))).body.bubbles).toEqual([]);
   });
 

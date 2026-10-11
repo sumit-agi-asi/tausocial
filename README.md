@@ -38,15 +38,22 @@ Requirements: Node.js ≥ 20 (22 recommended), npm ≥ 10. Docker is optional.
 
 ```bash
 npm ci
-cp .env.example .env      # set JWT_SECRET (openssl rand -hex 32)
+cp .env.example .env      # Docker Compose reads this file; replace its placeholders
 ```
+
+Direct `npm run dev:*` commands inherit exported shell variables and do not load `.env`.
+The API defaults to an in-memory PGlite database and a development-only JWT secret; do not use
+these defaults outside local development.
+For Docker Compose, set `POSTGRES_PASSWORD`, `JWT_SECRET` (generate one with
+`openssl rand -hex 32`), and `DATABASE_URL=postgres://postgres:<password>@postgres:5432/tausocial`
+in `.env`.
 
 ## Run
 
 ```bash
 npm run dev:server   # API on :4000, in-memory PGlite database, auto-migrated
 npm run dev:web      # web on :5173, proxies /api to :4000
-docker compose up --build   # Postgres + API + web on :8080 (needs POSTGRES_PASSWORD and JWT_SECRET in .env)
+docker compose up --build   # Postgres + API + web on :8080 (needs POSTGRES_PASSWORD, DATABASE_URL and JWT_SECRET in .env)
 ```
 
 API docs: <http://localhost:4000/api/docs> (spec: `/api/v1/openapi.json`, committed at `docs/openapi.json`).
