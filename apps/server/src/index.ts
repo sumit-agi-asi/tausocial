@@ -1,7 +1,17 @@
-import { app } from './app';
+import { loadConfig } from './config';
+import { createLogger } from './logger';
+import { start } from './server';
 
-const port = Number(process.env.PORT ?? 4000);
+async function main(): Promise<void> {
+  const config = loadConfig();
+  if (config.appInsightsConnectionString) {
+    const appInsights = await import('applicationinsights');
+    appInsights.setup(config.appInsightsConnectionString).start();
+  }
+  await start(config, createLogger(config.logLevel));
+}
 
-app.listen(port, () => {
-  console.log(`TauSocial API running on http://localhost:${port}`);
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

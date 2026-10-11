@@ -15,7 +15,9 @@
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.35.0",
+    "@playwright/test": "^1.64.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -26,6 +28,7 @@
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.44.1",
     "@typescript-eslint/parser": "^8.44.1",
+    "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^9.35.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
@@ -34,6 +37,6 @@
     "supertest": "^7.1.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.3"
   }
 }
