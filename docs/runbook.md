@@ -10,6 +10,10 @@
 3. Rollback: re-run `deploy.yml` (workflow_dispatch) with the previous image tag, or activate the previous Container Apps revision
    (`az containerapp revision activate`). Migrations are forward-only and additive; avoid destructive changes in one release.
 
+### GitHub Actions Azure bootstrap
+
+`deploy.yml` authenticates with a deployer user-assigned managed identity (UAMI), not an application registration. Before the first workflow run, deploy the infrastructure once with a bootstrap principal that has `Contributor` and `User Access Administrator` on each target resource group. Set each GitHub environment's `AZURE_UAMI_CLIENT_ID` variable to the resulting `deployerIdentityClientId`, along with `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`, `ACR_LOGIN_SERVER`, `RESOURCE_GROUP_NAME`, `TAUSOCIAL_GITHUB_ORGANIZATION`, and `TAUSOCIAL_GITHUB_REPOSITORY`. Grant each resulting UAMI `User Access Administrator` on its resource group so it can maintain the runtime role assignments. The template restricts its federated credentials to `repo:<organization>/<repository>:environment:staging` and `...:environment:production`; remove the obsolete `AZURE_CLIENT_ID` secret.
+
 ## Migrations
 `node apps/server/dist/migrate.js` (job in Container Apps, `npm run migrate -w @tausocial/server` locally). Idempotent; tracked in `schema_migrations`.
 

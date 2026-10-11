@@ -14,7 +14,8 @@ This directory defines a resource-group-scoped Azure deployment for TauSocial us
 - **container-apps**: Container Apps environment plus:
   - `api` on port `4000` with `/health/live` and `/health/ready` probes
   - `web` on port `8080`
-- **role-assignments**: grants the managed identity `Key Vault Secrets User`, `Storage Blob Data Contributor`, and `AcrPull`.
+- **deployer-identity**: creates the GitHub OIDC deployer UAMI and its `staging` and `production` environment federated credentials.
+- **role-assignments**: grants the runtime managed identity `Key Vault Secrets User`, `Storage Blob Data Contributor`, and `AcrPull`, and grants the deployer UAMI `Contributor` on the resource group and `AcrPush` on the registry.
 - **front-door**: Azure Front Door Standard/Premium profile, endpoint, API and web origin groups, `/api/*` route to the API app, and `/*` route to the web app, with optional custom domain.
 
 Runtime secret flow:
@@ -115,18 +116,15 @@ az deployment group create \
   --parameters infrastructure/parameters/production.bicepparam
 ```
 
-## OIDC / federated credential notes
+## Bootstrap the GitHub deployer UAMI
 
-For GitHub Actions or another OIDC-capable CI system:
+The deployer UAMI is part of this deployment, so a principal with permission to create identities and role assignments must run the first deployment. This prevents a deployment identity from needing to exist before Bicep creates it.
 
-1. Create an Entra application or user-assigned managed identity for deployment authentication.
-2. Add a federated credential whose issuer and subject match your CI workflow. For GitHub Actions this is commonly:
-   - issuer: `https://token.actions.githubusercontent.com`
-   - subject: `repo:<owner>/<repo>:ref:refs/heads/<branch>`
-   - audience: `api://AzureADTokenExchange`
-3. Grant the deployment identity at least `Contributor` on the target resource group.
-4. Because this deployment creates RBAC role assignments, also grant `User Access Administrator` on the same scope (or a broader scope if your platform team prefers).
-5. Export the `TAUSOCIAL_*` environment variables in the workflow before running `az deployment group what-if/create`.
+1. Set `TAUSOCIAL_GITHUB_ORGANIZATION` and `TAUSOCIAL_GITHUB_REPOSITORY` before the initial staging and production deployments.
+2. Deploy each resource group once using a bootstrap principal with `Contributor` and `User Access Administrator` on that resource group.
+3. Read the `deployerIdentityClientId` deployment output for each environment. Grant that UAMI `User Access Administrator` on its resource group; this is required because subsequent deployments manage the runtime identity's RBAC assignments.
+4. Set the matching GitHub environment's `AZURE_UAMI_CLIENT_ID` variable to that client ID. The template creates credentials with issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, and subjects `repo:<organization>/<repository>:environment:staging` and `repo:<organization>/<repository>:environment:production`.
+5. Remove the obsolete `AZURE_CLIENT_ID` secret after both environments use the UAMI.
 
 ## Secrets handling
 
@@ -166,7 +164,6 @@ bicep lint infrastructure/main.bicep
 
 ### Required GitHub environment secrets
 
-- `AZURE_CLIENT_ID`
 - `TAUSOCIAL_STAGING_POSTGRES_ADMIN_PASSWORD`
 - `TAUSOCIAL_STAGING_DATABASE_URL`
 - `TAUSOCIAL_STAGING_JWT_SECRET`
@@ -178,11 +175,14 @@ bicep lint infrastructure/main.bicep
 
 Shared Azure/auth and registry variables:
 
+- `AZURE_UAMI_CLIENT_ID` (the `deployerIdentityClientId` output for that environment)
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 - `ACR_NAME`
 - `ACR_LOGIN_SERVER`
 - `RESOURCE_GROUP_NAME`
+- `TAUSOCIAL_GITHUB_ORGANIZATION` (for example, `sumit-agi-asi`)
+- `TAUSOCIAL_GITHUB_REPOSITORY` (for example, `tausocial`)
 
 Staging deployment variables:
 
@@ -245,38 +245,3 @@ Production deployment variables:
 - `TAUSOCIAL_PRODUCTION_CONTAINERAPPS_WORKLOAD_PROFILE`
 - `PRODUCTION_WEB_URL`
 - `PRODUCTION_API_BASE_URL`
-
-### Example Azure CLI commands for federated credentials
-
-Create the application or managed identity first, then create federated credentials for the GitHub environments.
-
-```bash
-# Optional: create an Entra application for GitHub Actions OIDC
-az ad app create   --display-name "<GITHUB_ACTIONS_APP_NAME_PLACEHOLDER>"
-
-# Create a service principal for the app
-az ad sp create --id "<AZURE_CLIENT_ID_PLACEHOLDER>"
-
-# Grant deployment access at resource-group scope
-az role assignment create   --assignee "<AZURE_CLIENT_ID_PLACEHOLDER>"   --role Contributor   --scope "/subscriptions/<AZURE_SUBSCRIPTION_ID_PLACEHOLDER>/resourceGroups/<RESOURCE_GROUP_NAME_PLACEHOLDER>"
-
-az role assignment create   --assignee "<AZURE_CLIENT_ID_PLACEHOLDER>"   --role "User Access Administrator"   --scope "/subscriptions/<AZURE_SUBSCRIPTION_ID_PLACEHOLDER>/resourceGroups/<RESOURCE_GROUP_NAME_PLACEHOLDER>"
-
-# Add staging environment federated credential
-az ad app federated-credential create   --id "<AZURE_CLIENT_ID_PLACEHOLDER>"   --parameters '{
-    "name": "<STAGING_FEDERATED_CREDENTIAL_NAME_PLACEHOLDER>",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:<GITHUB_OWNER_PLACEHOLDER>/<GITHUB_REPO_PLACEHOLDER>:environment:staging",
-    "description": "GitHub Actions staging deployment",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-
-# Add production environment federated credential
-az ad app federated-credential create   --id "<AZURE_CLIENT_ID_PLACEHOLDER>"   --parameters '{
-    "name": "<PRODUCTION_FEDERATED_CREDENTIAL_NAME_PLACEHOLDER>",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:<GITHUB_OWNER_PLACEHOLDER>/<GITHUB_REPO_PLACEHOLDER>:environment:production",
-    "description": "GitHub Actions production deployment",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-```

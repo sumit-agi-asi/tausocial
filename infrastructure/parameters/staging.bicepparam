@@ -6,6 +6,8 @@ param resourceGroupName = readEnvironmentVariable('TAUSOCIAL_STAGING_RESOURCE_GR
 param environmentName = 'staging'
 param location = readEnvironmentVariable('TAUSOCIAL_STAGING_LOCATION', '<AZURE_LOCATION_PLACEHOLDER>')
 param namePrefix = readEnvironmentVariable('TAUSOCIAL_STAGING_NAME_PREFIX', '<NAME_PREFIX_PLACEHOLDER>')
+param githubOrganization = readEnvironmentVariable('TAUSOCIAL_GITHUB_ORGANIZATION', '<GITHUB_ORGANIZATION_PLACEHOLDER>')
+param githubRepository = readEnvironmentVariable('TAUSOCIAL_GITHUB_REPOSITORY', '<GITHUB_REPOSITORY_PLACEHOLDER>')
 param tags = {
   costCenter: readEnvironmentVariable('TAUSOCIAL_STAGING_COST_CENTER', '<COST_CENTER_PLACEHOLDER>')
   owner: readEnvironmentVariable('TAUSOCIAL_STAGING_OWNER', '<OWNER_PLACEHOLDER>')
