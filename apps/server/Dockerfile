@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -12,7 +12,7 @@ COPY apps/server/src apps/server/src
 
 RUN npm run build --workspace @tausocial/server
 
-FROM node:22-alpine AS prod-deps
+FROM node:25-alpine AS prod-deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -22,7 +22,7 @@ COPY apps/web/package.json apps/web/package.json
 RUN npm ci --omit=dev --workspace @tausocial/server --include-workspace-root \
   && npm cache clean --force
 
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
