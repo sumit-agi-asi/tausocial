@@ -24,7 +24,8 @@ export function authRoutes(ctx: AppContext, limiter: RateLimitRequestHandler): R
           [id, input.email, input.username, hashPassword(input.password), input.username, input.birthDate]
         );
       } catch (error) {
-        if (/unique|duplicate/i.test((error as Error).message)) {
+        const { code, message } = error as { code?: string; message: string };
+        if (code === '23505' || /unique|duplicate/i.test(message)) {
           throw conflict('Email or username is already registered');
         }
         throw error;

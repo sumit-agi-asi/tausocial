@@ -1,7 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
+import { randomUUID } from 'node:crypto';
 import { expect, test, Page } from '@playwright/test';
 
-const unique = () => Math.random().toString(16).slice(2, 10);
+const unique = () => randomUUID().slice(0, 8);
 
 async function signUp(page: Page, username = `e2e${unique()}`) {
   await page.goto('/signup');

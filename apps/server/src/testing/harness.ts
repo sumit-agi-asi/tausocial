@@ -40,7 +40,7 @@ export async function registerUser(
   overrides: Partial<{ username: string; birthDate: string }> = {}
 ): Promise<TestUser> {
   counter += 1;
-  const username = overrides.username ?? `user_${counter}_${Math.random().toString(36).slice(2, 6)}`;
+  const username = overrides.username ?? `user_${counter}_${crypto.randomUUID().slice(0, 4)}`;
   const response = await request(app)
     .post('/api/v1/auth/register')
     .send({

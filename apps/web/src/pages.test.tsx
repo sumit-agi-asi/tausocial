@@ -233,7 +233,7 @@ describe('feed', () => {
     await user.click(await screen.findByRole('button', { name: 'Post actions' }));
     await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Edit not saved')).toBeInTheDocument();
+    expect(await screen.findByText('Action not completed')).toBeInTheDocument();
   });
 });
 

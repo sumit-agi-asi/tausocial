@@ -29,7 +29,7 @@ export function PostCard({ post, onChange, onDeleted, showThreadLink = true }: P
       await action();
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'content_blocked') {
-        setNotice({ title: 'Edit not saved', message: 'Monitoring flagged the edited text as unsafe.' });
+        setNotice({ title: 'Action not completed', message: 'Monitoring flagged the content as unsafe.' });
       } else {
         setError(messageOf(caught));
       }

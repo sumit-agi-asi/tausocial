@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useId, useRef } from 'react';
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
@@ -33,19 +33,26 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 /** Modal popup (the "Popup → Message" element in the design). Traps nothing exotic: Esc closes, focus moves in. */
 export function Popup({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const titleId = useId();
   useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
     ref.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') closeRef.current();
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previous?.focus?.();
+    };
+  }, []);
 
   return (
     <div className="popup-backdrop">
-      <div ref={ref} className="popup" role="alertdialog" aria-modal="true" aria-labelledby="popup-title" tabIndex={-1}>
-        <h2 id="popup-title">{title}</h2>
+      <div ref={ref} className="popup" role="alertdialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <h2 id={titleId}>{title}</h2>
         <div>{children}</div>
         <button type="button" className="btn btn-primary" onClick={onClose}>
           Got it
