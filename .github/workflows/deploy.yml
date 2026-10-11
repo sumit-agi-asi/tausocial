@@ -27,7 +27,7 @@ jobs:
       image_tag: ${{ steps.images.outputs.image_tag }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v3
         with:
@@ -131,7 +131,7 @@ jobs:
       STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v3
         with:
@@ -245,7 +245,7 @@ jobs:
       PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v3
         with:
