@@ -32,6 +32,43 @@ export interface AppDependencies {
   ready?: () => boolean;
 }
 
+export const onError: ErrorRequestHandler = (error, req, res, next) => {
+  void next;
+  const requestId = String(req.id);
+  if (error instanceof ZodError) {
+    res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'Request validation failed',
+        details: error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+        requestId
+      }
+    });
+    return;
+  }
+  if (error instanceof AppError) {
+    const { moderation, ...details } = (error.details ?? {}) as { moderation?: unknown };
+    res.status(error.status).json({
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(Object.keys(details).length ? { details } : {}),
+        requestId
+      },
+      ...(moderation ? { moderation } : {})
+    });
+    return;
+  }
+  const type = (error as { type?: string }).type;
+  if (type === 'entity.parse.failed' || type === 'entity.too.large') {
+    const status = type === 'entity.too.large' ? 413 : 400;
+    res.status(status).json({ error: { code: 'bad_request', message: 'Invalid request body', requestId } });
+    return;
+  }
+  req.log.error({ err: error }, 'unhandled error');
+  res.status(500).json({ error: { code: 'internal_error', message: 'Internal server error', requestId } });
+};
+
 export function createApp(deps: AppDependencies): Express {
   const { config, db, logger } = deps;
   const ctx: AppContext = {
@@ -57,7 +94,7 @@ export function createApp(deps: AppDependencies): Express {
         res.setHeader('x-request-id', id);
         return id;
       },
-      autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false }
+      autoLogging: { ignore: (req) => req.url.startsWith('/health') }
     })
   );
   app.use(helmet());
@@ -120,42 +157,6 @@ export function createApp(deps: AppDependencies): Express {
 
   app.use((_req, _res, next) => next(new AppError(404, 'not_found', 'Route not found')));
 
-  const onError: ErrorRequestHandler = (error, req, res, next) => {
-    void next;
-    const requestId = String(req.id);
-    if (error instanceof ZodError) {
-      res.status(400).json({
-        error: {
-          code: 'validation_error',
-          message: 'Request validation failed',
-          details: error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
-          requestId
-        }
-      });
-      return;
-    }
-    if (error instanceof AppError) {
-      const { moderation, ...details } = (error.details ?? {}) as { moderation?: unknown };
-      res.status(error.status).json({
-        error: {
-          code: error.code,
-          message: error.message,
-          ...(Object.keys(details).length ? { details } : {}),
-          requestId
-        },
-        ...(moderation ? { moderation } : {})
-      });
-      return;
-    }
-    const type = (error as { type?: string }).type;
-    if (type === 'entity.parse.failed' || type === 'entity.too.large') {
-      const status = type === 'entity.too.large' ? 413 : 400;
-      res.status(status).json({ error: { code: 'bad_request', message: 'Invalid request body', requestId } });
-      return;
-    }
-    req.log.error({ err: error }, 'unhandled error');
-    res.status(500).json({ error: { code: 'internal_error', message: 'Internal server error', requestId } });
-  };
   app.use(onError);
 
   return app;

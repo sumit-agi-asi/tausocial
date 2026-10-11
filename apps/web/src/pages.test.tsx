@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +60,18 @@ describe('authentication', () => {
     });
   });
 
+  it('shows signup failures accessibly', async () => {
+    const user = userEvent.setup();
+    mocks.api['register']!.mockRejectedValueOnce(new Error('Username is unavailable'));
+    renderApp('/signup');
+    await user.type(screen.getByLabelText('Username'), 'alice');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'correct-horse-battery');
+    await user.type(screen.getByLabelText('Date of birth'), '1990-01-01');
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Username is unavailable');
+  });
+
   it('logs out', async () => {
     const user = userEvent.setup();
     signedIn();
@@ -72,6 +84,12 @@ describe('authentication', () => {
   it('redirects signed-in users away from login and handles unknown routes', async () => {
     signedIn();
     renderApp('/login');
+    expect(await screen.findByRole('heading', { name: 'Your feed' })).toBeInTheDocument();
+  });
+
+  it('redirects signed-in users from signup to their feed', async () => {
+    signedIn();
+    renderApp('/signup');
     expect(await screen.findByRole('heading', { name: 'Your feed' })).toBeInTheDocument();
   });
 
@@ -186,6 +204,14 @@ describe('feed', () => {
     await waitFor(() => expect(mocks.api['refreshFeed']).toHaveBeenCalled());
   });
 
+  it('refreshes the feed when a refresh request fails', async () => {
+    const user = userEvent.setup();
+    mocks.api['refreshFeed']!.mockRejectedValueOnce(new Error('offline'));
+    renderApp('/feed');
+    await user.click(await screen.findByRole('button', { name: 'Refresh feed' }));
+    await waitFor(() => expect(mocks.api['feed']).toHaveBeenCalledTimes(2));
+  });
+
   it('lets others report and copy; authors edit and delete', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -243,21 +269,50 @@ describe('threads', () => {
   it('shows a thread with sub-threads and replies', async () => {
     const user = userEvent.setup();
     mocks.api['thread']!.mockResolvedValue({
-      items: [makePost({ id: 'r', body: 'Root' }), makePost({ id: 'c', parentId: 'r', body: 'Child' }), makePost({ id: 'g', parentId: 'c', body: 'Grand' })]
+      items: [
+        makePost({ id: 'r', body: 'Root', authorId: 'u1', authorUsername: 'alice' }),
+        makePost({ id: 'c', parentId: 'r', body: 'Child' }),
+        makePost({ id: 'g', parentId: 'c', body: 'Grand' })
+      ]
     });
     mocks.api['createPost']!.mockResolvedValue(makePost());
+    mocks.api['editPost']!.mockResolvedValue(makePost({ id: 'r', authorId: 'u1', body: 'Edited root' }));
+    mocks.api['deletePost']!.mockResolvedValue(undefined);
     renderApp('/thread/r');
     expect(await screen.findByText('Grand')).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Reply to this thread' }), 'A reply');
     await user.click(screen.getByRole('button', { name: 'Reply' }));
     await waitFor(() => expect(mocks.api['createPost']).toHaveBeenCalledWith({ body: 'A reply', parentId: 'r', media: [] }));
     await waitFor(() => expect(mocks.api['thread']).toHaveBeenCalledTimes(2));
+    const root = screen.getByRole('article', { name: 'Post by alice' });
+    await user.click(within(root).getByRole('button', { name: 'Post actions' }));
+    await user.click(within(root).getByRole('menuitem', { name: 'Edit' }));
+    await user.clear(within(root).getByLabelText('Edit post'));
+    await user.type(within(root).getByLabelText('Edit post'), 'Edited root');
+    await user.click(within(root).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Edited root')).toBeInTheDocument();
+    await user.click(within(root).getByRole('button', { name: 'Post actions' }));
+    await user.click(within(root).getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByText('Edited root')).not.toBeInTheDocument());
   });
 
   it('shows thread errors', async () => {
     mocks.api['thread']!.mockRejectedValue(new Error('Post not found'));
     renderApp('/thread/zzz');
     expect(await screen.findByRole('alert')).toHaveTextContent('Post not found');
+  });
+
+  it('renders an empty thread and handles a reply with a missing parent', async () => {
+    mocks.api['thread']!.mockResolvedValue({
+      items: [makePost({ id: 'orphan', parentId: 'missing', body: 'Orphan' })]
+    });
+    renderApp('/thread/root');
+    expect(await screen.findByText('Orphan')).toBeInTheDocument();
+
+    cleanup();
+    mocks.api['thread']!.mockResolvedValueOnce({ items: undefined } as never);
+    renderApp('/thread/empty');
+    expect(await screen.findByRole('heading', { name: 'Thread' })).toBeInTheDocument();
   });
 });
 
@@ -306,6 +361,25 @@ describe('connections', () => {
     renderApp('/connections');
     await user.click(await screen.findByRole('button', { name: 'Connect with dave' }));
     expect(await screen.findByText('A connection or request already exists')).toBeInTheDocument();
+  });
+
+  it('shows connection list errors and supports retry', async () => {
+    const user = userEvent.setup();
+    mocks.api['recommendations']!.mockRejectedValue(new Error('recommendations unavailable'));
+    mocks.api['connections']!.mockRejectedValue(new Error('connections unavailable'));
+    renderApp('/connections');
+    expect(await screen.findByText('recommendations unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('connections unavailable')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Try again' })[0]!);
+    await waitFor(() => expect(mocks.api['recommendations']).toHaveBeenCalledTimes(2));
+  });
+
+  it('labels outgoing connection requests', async () => {
+    mocks.api['connections']!.mockResolvedValue({
+      connections: [{ userId: 'u5', username: 'frank', displayName: 'Frank', status: 'pending_outgoing', score: null, flag: 'none' }]
+    });
+    renderApp('/connections');
+    expect(await screen.findByText('Request sent')).toBeInTheDocument();
   });
 });
 
@@ -433,6 +507,24 @@ describe('profiles', () => {
     mocks.api['profile']!.mockRejectedValue(new Error('This profile is only visible to connections'));
     renderApp('/profile/u2');
     expect(await screen.findByRole('alert')).toHaveTextContent('only visible to connections');
+  });
+
+  it('renders nothing while profile data is unavailable', () => {
+    mocks.api['profile']!.mockResolvedValue(undefined);
+    renderApp('/profile/u2');
+    return waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
+  it('shows connect and block errors', async () => {
+    const user = userEvent.setup();
+    mocks.api['profile']!.mockResolvedValue(person);
+    mocks.api['connect']!.mockRejectedValueOnce(new Error('request failed'));
+    mocks.api['blockProfile']!.mockRejectedValueOnce(new Error('block failed'));
+    renderApp('/profile/u2');
+    await user.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('request failed');
+    await user.click(screen.getByRole('button', { name: 'Block' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('block failed');
   });
 });
 

@@ -4,7 +4,7 @@
       "enabled": true,
       "rules": {
         "outputs-should-not-contain-secrets": {
-          "level": "off"
+          "level": "warning"
         }
       }
     }

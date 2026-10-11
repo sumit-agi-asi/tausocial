@@ -19,7 +19,7 @@ export function ThreadPage() {
   const posts = (thread.data?.items ?? []).filter((post) => !removed.includes(post.id)).map((post) => overrides[post.id] ?? post);
   const depth = new Map<string, number>();
   for (const post of posts) {
-    depth.set(post.id, post.parentId && depth.has(post.parentId) ? Math.min((depth.get(post.parentId) ?? 0) + 1, 4) : 0);
+    depth.set(post.id, post.parentId && depth.has(post.parentId) ? Math.min(depth.get(post.parentId)! + 1, 4) : 0);
   }
 
   return (
@@ -29,7 +29,7 @@ export function ThreadPage() {
       </p>
       <h1>Thread</h1>
       {posts.map((post) => (
-        <div key={post.id} className={`thread-level thread-level-${depth.get(post.id) ?? 0}`}>
+        <div key={post.id} className={`thread-level thread-level-${depth.get(post.id)!}`}>
           <PostCard
             post={post}
             showThreadLink={false}
