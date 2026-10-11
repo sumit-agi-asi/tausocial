@@ -58,7 +58,7 @@ jobs:
             type=registry
             type=docker,dest=${{ runner.temp }}/tausocial-api.tar
       - name: Upload API image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tausocial-api-${{ github.sha }}
           path: ${{ runner.temp }}/tausocial-api.tar
@@ -76,7 +76,7 @@ jobs:
             type=registry
             type=docker,dest=${{ runner.temp }}/tausocial-web.tar
       - name: Upload web image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tausocial-web-${{ github.sha }}
           path: ${{ runner.temp }}/tausocial-web.tar
