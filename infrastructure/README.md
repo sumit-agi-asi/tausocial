@@ -158,3 +158,125 @@ bicep build-params infrastructure/parameters/staging.bicepparam --stdout >/dev/n
 bicep build-params infrastructure/parameters/production.bicepparam --stdout >/dev/null
 bicep lint infrastructure/main.bicep
 ```
+
+
+## CI/CD OIDC setup
+
+`deploy.yml` expects GitHub **environment-scoped** configuration for both `staging` and `production`.
+
+### Required GitHub environment secrets
+
+- `AZURE_CLIENT_ID`
+- `TAUSOCIAL_STAGING_POSTGRES_ADMIN_PASSWORD`
+- `TAUSOCIAL_STAGING_DATABASE_URL`
+- `TAUSOCIAL_STAGING_JWT_SECRET`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_PASSWORD`
+- `TAUSOCIAL_PRODUCTION_DATABASE_URL`
+- `TAUSOCIAL_PRODUCTION_JWT_SECRET`
+
+### Required GitHub environment variables
+
+Shared Azure/auth and registry variables:
+
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `ACR_NAME`
+- `ACR_LOGIN_SERVER`
+- `RESOURCE_GROUP_NAME`
+
+Staging deployment variables:
+
+- `TAUSOCIAL_STAGING_LOCATION`
+- `TAUSOCIAL_STAGING_NAME_PREFIX`
+- `TAUSOCIAL_STAGING_COST_CENTER`
+- `TAUSOCIAL_STAGING_OWNER`
+- `TAUSOCIAL_STAGING_FRONTDOOR_SKU`
+- `TAUSOCIAL_STAGING_CUSTOM_DOMAIN`
+- `TAUSOCIAL_STAGING_LOG_LEVEL`
+- `TAUSOCIAL_STAGING_CORS_ORIGINS`
+- `TAUSOCIAL_STAGING_LOG_ANALYTICS_SKU`
+- `TAUSOCIAL_STAGING_APPINSIGHTS_TYPE`
+- `TAUSOCIAL_STAGING_KEYVAULT_SKU`
+- `TAUSOCIAL_STAGING_POSTGRES_SKU`
+- `TAUSOCIAL_STAGING_POSTGRES_VERSION`
+- `TAUSOCIAL_STAGING_POSTGRES_STORAGE_GB`
+- `TAUSOCIAL_STAGING_POSTGRES_BACKUP_RETENTION_DAYS`
+- `TAUSOCIAL_STAGING_POSTGRES_ZONE`
+- `TAUSOCIAL_STAGING_POSTGRES_ADMIN_LOGIN`
+- `TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_OBJECT_ID`
+- `TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME`
+- `TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE`
+- `TAUSOCIAL_STAGING_POSTGRES_FIREWALL_START_IP`
+- `TAUSOCIAL_STAGING_POSTGRES_FIREWALL_END_IP`
+- `TAUSOCIAL_STAGING_STORAGE_SKU`
+- `TAUSOCIAL_STAGING_STORAGE_ACCESS_TIER`
+- `TAUSOCIAL_STAGING_ACR_SKU`
+- `TAUSOCIAL_STAGING_CONTAINERAPPS_WORKLOAD_PROFILE`
+- `STAGING_WEB_URL`
+- `STAGING_API_BASE_URL`
+
+Production deployment variables:
+
+- `TAUSOCIAL_PRODUCTION_LOCATION`
+- `TAUSOCIAL_PRODUCTION_NAME_PREFIX`
+- `TAUSOCIAL_PRODUCTION_COST_CENTER`
+- `TAUSOCIAL_PRODUCTION_OWNER`
+- `TAUSOCIAL_PRODUCTION_FRONTDOOR_SKU`
+- `TAUSOCIAL_PRODUCTION_CUSTOM_DOMAIN`
+- `TAUSOCIAL_PRODUCTION_LOG_LEVEL`
+- `TAUSOCIAL_PRODUCTION_CORS_ORIGINS`
+- `TAUSOCIAL_PRODUCTION_LOG_ANALYTICS_SKU`
+- `TAUSOCIAL_PRODUCTION_APPINSIGHTS_TYPE`
+- `TAUSOCIAL_PRODUCTION_KEYVAULT_SKU`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_SKU`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_VERSION`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_STORAGE_GB`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_BACKUP_RETENTION_DAYS`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ZONE`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_LOGIN`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_OBJECT_ID`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_START_IP`
+- `TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_END_IP`
+- `TAUSOCIAL_PRODUCTION_STORAGE_SKU`
+- `TAUSOCIAL_PRODUCTION_STORAGE_ACCESS_TIER`
+- `TAUSOCIAL_PRODUCTION_ACR_SKU`
+- `TAUSOCIAL_PRODUCTION_CONTAINERAPPS_WORKLOAD_PROFILE`
+- `PRODUCTION_WEB_URL`
+- `PRODUCTION_API_BASE_URL`
+
+### Example Azure CLI commands for federated credentials
+
+Create the application or managed identity first, then create federated credentials for the GitHub environments.
+
+```bash
+# Optional: create an Entra application for GitHub Actions OIDC
+az ad app create   --display-name "<GITHUB_ACTIONS_APP_NAME_PLACEHOLDER>"
+
+# Create a service principal for the app
+az ad sp create --id "<AZURE_CLIENT_ID_PLACEHOLDER>"
+
+# Grant deployment access at resource-group scope
+az role assignment create   --assignee "<AZURE_CLIENT_ID_PLACEHOLDER>"   --role Contributor   --scope "/subscriptions/<AZURE_SUBSCRIPTION_ID_PLACEHOLDER>/resourceGroups/<RESOURCE_GROUP_NAME_PLACEHOLDER>"
+
+az role assignment create   --assignee "<AZURE_CLIENT_ID_PLACEHOLDER>"   --role "User Access Administrator"   --scope "/subscriptions/<AZURE_SUBSCRIPTION_ID_PLACEHOLDER>/resourceGroups/<RESOURCE_GROUP_NAME_PLACEHOLDER>"
+
+# Add staging environment federated credential
+az ad app federated-credential create   --id "<AZURE_CLIENT_ID_PLACEHOLDER>"   --parameters '{
+    "name": "<STAGING_FEDERATED_CREDENTIAL_NAME_PLACEHOLDER>",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:<GITHUB_OWNER_PLACEHOLDER>/<GITHUB_REPO_PLACEHOLDER>:environment:staging",
+    "description": "GitHub Actions staging deployment",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# Add production environment federated credential
+az ad app federated-credential create   --id "<AZURE_CLIENT_ID_PLACEHOLDER>"   --parameters '{
+    "name": "<PRODUCTION_FEDERATED_CREDENTIAL_NAME_PLACEHOLDER>",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:<GITHUB_OWNER_PLACEHOLDER>/<GITHUB_REPO_PLACEHOLDER>:environment:production",
+    "description": "GitHub Actions production deployment",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+```

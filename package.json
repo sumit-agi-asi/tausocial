@@ -11,8 +11,16 @@
     "dev:web": "npm run dev --workspace @tausocial/web",
     "dev:server": "npm run dev --workspace @tausocial/server",
     "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "secrets:scan": "node tests/security/scan-secrets.mjs",
+    "e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "smoke": "node tests/load/smoke.mjs",
+    "infra:validate": "bicep build infrastructure/main.bicep --stdout > /dev/null && bicep build-params infrastructure/parameters/staging.bicepparam --stdout > /dev/null && bicep build-params infrastructure/parameters/production.bicepparam --stdout > /dev/null",
+    "openapi": "npm run openapi --workspace @tausocial/server"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -38,5 +46,8 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

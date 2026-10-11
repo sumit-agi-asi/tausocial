@@ -1,0 +1,287 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      web_image: ${{ steps.images.outputs.web_image }}
+      image_tag: ${{ steps.images.outputs.image_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Set image metadata
+        id: images
+        run: |
+          IMAGE_TAG="${GITHUB_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "api_image=${{ vars.ACR_LOGIN_SERVER }}/tausocial-api:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "web_image=${{ vars.ACR_LOGIN_SERVER }}/tausocial-web:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+      - name: Log in to Azure Container Registry
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.api_image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.web_image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAUSOCIAL_STAGING_AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TAUSOCIAL_STAGING_AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
+      TAUSOCIAL_STAGING_LOCATION: ${{ vars.TAUSOCIAL_STAGING_LOCATION }}
+      TAUSOCIAL_STAGING_NAME_PREFIX: ${{ vars.TAUSOCIAL_STAGING_NAME_PREFIX }}
+      TAUSOCIAL_STAGING_COST_CENTER: ${{ vars.TAUSOCIAL_STAGING_COST_CENTER }}
+      TAUSOCIAL_STAGING_OWNER: ${{ vars.TAUSOCIAL_STAGING_OWNER }}
+      TAUSOCIAL_STAGING_FRONTDOOR_SKU: ${{ vars.TAUSOCIAL_STAGING_FRONTDOOR_SKU }}
+      TAUSOCIAL_STAGING_CUSTOM_DOMAIN: ${{ vars.TAUSOCIAL_STAGING_CUSTOM_DOMAIN }}
+      TAUSOCIAL_STAGING_API_IMAGE: ${{ needs.build-and-push.outputs.api_image }}
+      TAUSOCIAL_STAGING_WEB_IMAGE: ${{ needs.build-and-push.outputs.web_image }}
+      TAUSOCIAL_STAGING_LOG_LEVEL: ${{ vars.TAUSOCIAL_STAGING_LOG_LEVEL }}
+      TAUSOCIAL_STAGING_CORS_ORIGINS: ${{ vars.TAUSOCIAL_STAGING_CORS_ORIGINS }}
+      TAUSOCIAL_STAGING_LOG_ANALYTICS_SKU: ${{ vars.TAUSOCIAL_STAGING_LOG_ANALYTICS_SKU }}
+      TAUSOCIAL_STAGING_APPINSIGHTS_TYPE: ${{ vars.TAUSOCIAL_STAGING_APPINSIGHTS_TYPE }}
+      TAUSOCIAL_STAGING_KEYVAULT_SKU: ${{ vars.TAUSOCIAL_STAGING_KEYVAULT_SKU }}
+      TAUSOCIAL_STAGING_POSTGRES_SKU: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_SKU }}
+      TAUSOCIAL_STAGING_POSTGRES_VERSION: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_VERSION }}
+      TAUSOCIAL_STAGING_POSTGRES_STORAGE_GB: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_STORAGE_GB }}
+      TAUSOCIAL_STAGING_POSTGRES_BACKUP_RETENTION_DAYS: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_BACKUP_RETENTION_DAYS }}
+      TAUSOCIAL_STAGING_POSTGRES_ZONE: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_ZONE }}
+      TAUSOCIAL_STAGING_POSTGRES_ADMIN_LOGIN: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_ADMIN_LOGIN }}
+      TAUSOCIAL_STAGING_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TAUSOCIAL_STAGING_POSTGRES_ADMIN_PASSWORD }}
+      TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_OBJECT_ID: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_OBJECT_ID }}
+      TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME }}
+      TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE }}
+      TAUSOCIAL_STAGING_POSTGRES_FIREWALL_START_IP: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_FIREWALL_START_IP }}
+      TAUSOCIAL_STAGING_POSTGRES_FIREWALL_END_IP: ${{ vars.TAUSOCIAL_STAGING_POSTGRES_FIREWALL_END_IP }}
+      TAUSOCIAL_STAGING_STORAGE_SKU: ${{ vars.TAUSOCIAL_STAGING_STORAGE_SKU }}
+      TAUSOCIAL_STAGING_STORAGE_ACCESS_TIER: ${{ vars.TAUSOCIAL_STAGING_STORAGE_ACCESS_TIER }}
+      TAUSOCIAL_STAGING_ACR_SKU: ${{ vars.TAUSOCIAL_STAGING_ACR_SKU }}
+      TAUSOCIAL_STAGING_CONTAINERAPPS_WORKLOAD_PROFILE: ${{ vars.TAUSOCIAL_STAGING_CONTAINERAPPS_WORKLOAD_PROFILE }}
+      TAUSOCIAL_STAGING_DATABASE_URL: ${{ secrets.TAUSOCIAL_STAGING_DATABASE_URL }}
+      TAUSOCIAL_STAGING_JWT_SECRET: ${{ secrets.TAUSOCIAL_STAGING_JWT_SECRET }}
+      STAGING_API_BASE_URL: ${{ vars.STAGING_API_BASE_URL }}
+      STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Install Bicep CLI
+        run: az bicep install
+      - name: Install Container Apps extension
+        run: az extension add --name containerapp --upgrade --yes
+      - name: Deploy staging infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" \
+            --parameters infrastructure/parameters/staging.bicepparam
+      - name: Create or update staging migration job
+        run: |
+          BASE_NAME="${TAUSOCIAL_STAGING_NAME_PREFIX}-staging"
+          JOB_NAME="${BASE_NAME}-migrate"
+          ENV_NAME="${BASE_NAME}-cae"
+          IDENTITY_ID=$(az identity show --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" --name "${BASE_NAME}-uami" --query id --output tsv)
+          if az containerapp job show --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" --name "$JOB_NAME" >/dev/null 2>&1; then
+            az containerapp job update \
+              --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" \
+              --name "$JOB_NAME" \
+              --environment "$ENV_NAME" \
+              --trigger-type Manual \
+              --image "${{ needs.build-and-push.outputs.api_image }}" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
+              --user-assigned "$IDENTITY_ID" \
+              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --secrets database-url="$TAUSOCIAL_STAGING_DATABASE_URL" jwt-secret="$TAUSOCIAL_STAGING_JWT_SECRET" \
+              --secret-volume-mount /mnt/secrets \
+              --command node apps/server/dist/migrate.js
+          else
+            az containerapp job create \
+              --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" \
+              --name "$JOB_NAME" \
+              --environment "$ENV_NAME" \
+              --trigger-type Manual \
+              --image "${{ needs.build-and-push.outputs.api_image }}" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
+              --user-assigned "$IDENTITY_ID" \
+              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --secrets database-url="$TAUSOCIAL_STAGING_DATABASE_URL" jwt-secret="$TAUSOCIAL_STAGING_JWT_SECRET" \
+              --secret-volume-mount /mnt/secrets \
+              --command node apps/server/dist/migrate.js
+          fi
+      - name: Run staging migration job
+        run: |
+          az containerapp job start \
+            --resource-group "$TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME" \
+            --name "${TAUSOCIAL_STAGING_NAME_PREFIX}-staging-migrate"
+      - name: Smoke test staging web
+        run: curl --fail --show-error --silent "$STAGING_WEB_URL"
+      - name: Smoke test staging API
+        run: curl --fail --show-error --silent "$STAGING_API_BASE_URL/health/live"
+
+  deploy-production:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-push
+      - deploy-staging
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAUSOCIAL_PRODUCTION_AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TAUSOCIAL_PRODUCTION_AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
+      TAUSOCIAL_PRODUCTION_LOCATION: ${{ vars.TAUSOCIAL_PRODUCTION_LOCATION }}
+      TAUSOCIAL_PRODUCTION_NAME_PREFIX: ${{ vars.TAUSOCIAL_PRODUCTION_NAME_PREFIX }}
+      TAUSOCIAL_PRODUCTION_COST_CENTER: ${{ vars.TAUSOCIAL_PRODUCTION_COST_CENTER }}
+      TAUSOCIAL_PRODUCTION_OWNER: ${{ vars.TAUSOCIAL_PRODUCTION_OWNER }}
+      TAUSOCIAL_PRODUCTION_FRONTDOOR_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_FRONTDOOR_SKU }}
+      TAUSOCIAL_PRODUCTION_CUSTOM_DOMAIN: ${{ vars.TAUSOCIAL_PRODUCTION_CUSTOM_DOMAIN }}
+      TAUSOCIAL_PRODUCTION_API_IMAGE: ${{ needs.build-and-push.outputs.api_image }}
+      TAUSOCIAL_PRODUCTION_WEB_IMAGE: ${{ needs.build-and-push.outputs.web_image }}
+      TAUSOCIAL_PRODUCTION_LOG_LEVEL: ${{ vars.TAUSOCIAL_PRODUCTION_LOG_LEVEL }}
+      TAUSOCIAL_PRODUCTION_CORS_ORIGINS: ${{ vars.TAUSOCIAL_PRODUCTION_CORS_ORIGINS }}
+      TAUSOCIAL_PRODUCTION_LOG_ANALYTICS_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_LOG_ANALYTICS_SKU }}
+      TAUSOCIAL_PRODUCTION_APPINSIGHTS_TYPE: ${{ vars.TAUSOCIAL_PRODUCTION_APPINSIGHTS_TYPE }}
+      TAUSOCIAL_PRODUCTION_KEYVAULT_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_KEYVAULT_SKU }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_SKU }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_VERSION: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_VERSION }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_STORAGE_GB: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_STORAGE_GB }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_BACKUP_RETENTION_DAYS: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_BACKUP_RETENTION_DAYS }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ZONE: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_ZONE }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_LOGIN: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_LOGIN }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TAUSOCIAL_PRODUCTION_POSTGRES_ADMIN_PASSWORD }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_OBJECT_ID: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_OBJECT_ID }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_START_IP: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_START_IP }}
+      TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_END_IP: ${{ vars.TAUSOCIAL_PRODUCTION_POSTGRES_FIREWALL_END_IP }}
+      TAUSOCIAL_PRODUCTION_STORAGE_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_STORAGE_SKU }}
+      TAUSOCIAL_PRODUCTION_STORAGE_ACCESS_TIER: ${{ vars.TAUSOCIAL_PRODUCTION_STORAGE_ACCESS_TIER }}
+      TAUSOCIAL_PRODUCTION_ACR_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_ACR_SKU }}
+      TAUSOCIAL_PRODUCTION_CONTAINERAPPS_WORKLOAD_PROFILE: ${{ vars.TAUSOCIAL_PRODUCTION_CONTAINERAPPS_WORKLOAD_PROFILE }}
+      TAUSOCIAL_PRODUCTION_DATABASE_URL: ${{ secrets.TAUSOCIAL_PRODUCTION_DATABASE_URL }}
+      TAUSOCIAL_PRODUCTION_JWT_SECRET: ${{ secrets.TAUSOCIAL_PRODUCTION_JWT_SECRET }}
+      PRODUCTION_API_BASE_URL: ${{ vars.PRODUCTION_API_BASE_URL }}
+      PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Install Bicep CLI
+        run: az bicep install
+      - name: Install Container Apps extension
+        run: az extension add --name containerapp --upgrade --yes
+      - name: Deploy production infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" \
+            --parameters infrastructure/parameters/production.bicepparam
+      - name: Create or update production migration job
+        run: |
+          BASE_NAME="${TAUSOCIAL_PRODUCTION_NAME_PREFIX}-production"
+          JOB_NAME="${BASE_NAME}-migrate"
+          ENV_NAME="${BASE_NAME}-cae"
+          IDENTITY_ID=$(az identity show --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" --name "${BASE_NAME}-uami" --query id --output tsv)
+          if az containerapp job show --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" --name "$JOB_NAME" >/dev/null 2>&1; then
+            az containerapp job update \
+              --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" \
+              --name "$JOB_NAME" \
+              --environment "$ENV_NAME" \
+              --trigger-type Manual \
+              --image "${{ needs.build-and-push.outputs.api_image }}" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
+              --user-assigned "$IDENTITY_ID" \
+              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --secrets database-url="$TAUSOCIAL_PRODUCTION_DATABASE_URL" jwt-secret="$TAUSOCIAL_PRODUCTION_JWT_SECRET" \
+              --secret-volume-mount /mnt/secrets \
+              --command node apps/server/dist/migrate.js
+          else
+            az containerapp job create \
+              --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" \
+              --name "$JOB_NAME" \
+              --environment "$ENV_NAME" \
+              --trigger-type Manual \
+              --image "${{ needs.build-and-push.outputs.api_image }}" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --registry-server "${{ vars.ACR_LOGIN_SERVER }}" \
+              --user-assigned "$IDENTITY_ID" \
+              --env-vars NODE_ENV=production DATABASE_SSL=true \
+              --secrets database-url="$TAUSOCIAL_PRODUCTION_DATABASE_URL" jwt-secret="$TAUSOCIAL_PRODUCTION_JWT_SECRET" \
+              --secret-volume-mount /mnt/secrets \
+              --command node apps/server/dist/migrate.js
+          fi
+      - name: Run production migration job
+        run: |
+          az containerapp job start \
+            --resource-group "$TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME" \
+            --name "${TAUSOCIAL_PRODUCTION_NAME_PREFIX}-production-migrate"
+      - name: Smoke test production web
+        run: curl --fail --show-error --silent "$PRODUCTION_WEB_URL"
+      - name: Smoke test production API
+        run: curl --fail --show-error --silent "$PRODUCTION_API_BASE_URL/health/live"

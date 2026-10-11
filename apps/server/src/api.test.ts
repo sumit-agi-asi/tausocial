@@ -115,7 +115,7 @@ describe('auth', () => {
 
   it('protects routes', async () => {
     expect((await api().get('/api/v1/profiles/me')).status).toBe(401);
-    expect((await api().get('/api/v1/profiles/me').set('Authorization', '******')).status).toBe(401);
+    expect((await api().get('/api/v1/profiles/me').set('Authorization', 'Bearer ' + 'not-a-token')).status).toBe(401);
     expect((await api().get('/api/v1/feed').set('Authorization', 'Basic abc')).status).toBe(401);
   });
 });
