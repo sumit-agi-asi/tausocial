@@ -19,6 +19,12 @@ param location string = resourceGroup().location
 @description('Prefix used to derive resource names.')
 param namePrefix string
 
+@description('GitHub organization that owns the repository permitted to deploy.')
+param githubOrganization string
+
+@description('GitHub repository permitted to deploy.')
+param githubRepository string
+
 @description('Optional tags applied to supported resources.')
 param tags object = {}
 
@@ -168,6 +174,17 @@ module identityAndSecrets 'modules/identity-and-secrets.bicep' = {
   }
 }
 
+module deployerIdentity 'modules/deployer-identity.bicep' = {
+  name: 'deployer-identity-${environmentName}'
+  params: {
+    location: location
+    namePrefix: baseName
+    tags: resourceTags
+    githubOrganization: githubOrganization
+    githubRepository: githubRepository
+  }
+}
+
 module data 'modules/data.bicep' = {
   name: 'data-${environmentName}'
   params: {
@@ -249,6 +266,7 @@ module roleAssignments 'modules/role-assignments.bicep' = {
     storageAccountName: storage.outputs.storageAccountName
     registryName: registry.outputs.registryName
     managedIdentityName: identityAndSecrets.outputs.managedIdentityName
+    deployerIdentityName: deployerIdentity.outputs.deployerIdentityName
   }
 }
 
@@ -268,6 +286,7 @@ module frontDoor 'modules/front-door.bicep' = {
 
 output applicationInsightsConnectionString string = observability.outputs.applicationInsightsConnectionString
 output containerRegistryName string = registry.outputs.registryName
+output deployerIdentityClientId string = deployerIdentity.outputs.deployerIdentityClientId
 output frontDoorEndpointHostName string = frontDoor.outputs.frontDoorEndpointHostName
 output keyVaultName string = identityAndSecrets.outputs.keyVaultName
 output managedIdentityName string = identityAndSecrets.outputs.managedIdentityName

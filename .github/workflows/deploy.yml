@@ -31,7 +31,7 @@ jobs:
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-id: ${{ vars.AZURE_UAMI_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Set image metadata
@@ -54,6 +54,15 @@ jobs:
           tags: ${{ steps.images.outputs.api_image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: |
+            type=registry
+            type=docker,dest=${{ runner.temp }}/tausocial-api.tar
+      - name: Upload API image
+        uses: actions/upload-artifact@v4
+        with:
+          name: tausocial-api-${{ github.sha }}
+          path: ${{ runner.temp }}/tausocial-api.tar
+          retention-days: 7
       - name: Build and push web image
         uses: docker/build-push-action@v6
         with:
@@ -63,6 +72,15 @@ jobs:
           tags: ${{ steps.images.outputs.web_image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: |
+            type=registry
+            type=docker,dest=${{ runner.temp }}/tausocial-web.tar
+      - name: Upload web image
+        uses: actions/upload-artifact@v4
+        with:
+          name: tausocial-web-${{ github.sha }}
+          path: ${{ runner.temp }}/tausocial-web.tar
+          retention-days: 7
 
   deploy-staging:
     name: Deploy to staging
@@ -78,6 +96,8 @@ jobs:
       TAUSOCIAL_STAGING_RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
       TAUSOCIAL_STAGING_LOCATION: ${{ vars.TAUSOCIAL_STAGING_LOCATION }}
       TAUSOCIAL_STAGING_NAME_PREFIX: ${{ vars.TAUSOCIAL_STAGING_NAME_PREFIX }}
+      TAUSOCIAL_GITHUB_ORGANIZATION: ${{ vars.TAUSOCIAL_GITHUB_ORGANIZATION }}
+      TAUSOCIAL_GITHUB_REPOSITORY: ${{ vars.TAUSOCIAL_GITHUB_REPOSITORY }}
       TAUSOCIAL_STAGING_COST_CENTER: ${{ vars.TAUSOCIAL_STAGING_COST_CENTER }}
       TAUSOCIAL_STAGING_OWNER: ${{ vars.TAUSOCIAL_STAGING_OWNER }}
       TAUSOCIAL_STAGING_FRONTDOOR_SKU: ${{ vars.TAUSOCIAL_STAGING_FRONTDOOR_SKU }}
@@ -115,7 +135,7 @@ jobs:
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-id: ${{ vars.AZURE_UAMI_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Install Bicep CLI
@@ -190,6 +210,8 @@ jobs:
       TAUSOCIAL_PRODUCTION_RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
       TAUSOCIAL_PRODUCTION_LOCATION: ${{ vars.TAUSOCIAL_PRODUCTION_LOCATION }}
       TAUSOCIAL_PRODUCTION_NAME_PREFIX: ${{ vars.TAUSOCIAL_PRODUCTION_NAME_PREFIX }}
+      TAUSOCIAL_GITHUB_ORGANIZATION: ${{ vars.TAUSOCIAL_GITHUB_ORGANIZATION }}
+      TAUSOCIAL_GITHUB_REPOSITORY: ${{ vars.TAUSOCIAL_GITHUB_REPOSITORY }}
       TAUSOCIAL_PRODUCTION_COST_CENTER: ${{ vars.TAUSOCIAL_PRODUCTION_COST_CENTER }}
       TAUSOCIAL_PRODUCTION_OWNER: ${{ vars.TAUSOCIAL_PRODUCTION_OWNER }}
       TAUSOCIAL_PRODUCTION_FRONTDOOR_SKU: ${{ vars.TAUSOCIAL_PRODUCTION_FRONTDOOR_SKU }}
@@ -227,7 +249,7 @@ jobs:
       - name: Authenticate to Azure with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-id: ${{ vars.AZURE_UAMI_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Install Bicep CLI

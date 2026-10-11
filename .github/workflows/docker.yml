@@ -38,3 +38,10 @@ jobs:
           tags: ${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: type=docker,dest=${{ runner.temp }}/${{ matrix.image }}.tar
+      - name: Upload ${{ matrix.name }} image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.image }}-pr-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/${{ matrix.image }}.tar
+          retention-days: 7

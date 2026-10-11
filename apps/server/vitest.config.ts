@@ -10,7 +10,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/testing/**', 'src/index.ts', 'src/migrate.ts', 'src/server.ts'],
       reporter: ['text-summary', 'lcov'],
-      thresholds: { lines: 90, functions: 90, statements: 90, branches: 80 }
+      thresholds: { lines: 95, functions: 95, statements: 94, branches: 86 }
     }
   }
 });
