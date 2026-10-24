@@ -85,3 +85,11 @@ required-reviewer environment gate). Fill in every `<…_PLACEHOLDER>` listed in
 
 - [Design notes](docs/design/README.md) · [Questions for the owner](docs/QUESTIONS.md)
 - [Recommender contract](docs/recommender.md) · [Runbook](docs/runbook.md) · [ADRs](docs/adr/)
+
+**&copy; Tau Social 2026. All Rights Reserved.**
+
+for  
+
+**X.com**
+and 
+**xAI.com**
